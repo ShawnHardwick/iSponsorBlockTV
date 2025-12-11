@@ -36,6 +36,8 @@ REPORT_SKIPPED_SEGMENTS_PROMPT = (
 MUTE_ADS_PROMPT = "Do you want to mute native YouTube ads automatically? (y/N) "
 SKIP_ADS_PROMPT = "Do you want to skip native YouTube ads automatically? (y/N) "
 AUTOPLAY_PROMPT = "Do you want to enable autoplay? (Y/n) "
+PAUSE_BEFORE_END_PROMPT = "Do you want to pause videos before they end? This prevents abrupt endings. (y/N) "
+PAUSE_BEFORE_END_SECONDS_PROMPT = "Enter how many seconds before the end to pause (default: 1.0): "
 
 
 def get_yn_input(prompt):
@@ -206,6 +208,24 @@ def main(config, debug: bool) -> None:
 
     choice = get_yn_input(AUTOPLAY_PROMPT)
     config.auto_play = choice != "n"
+
+    choice = get_yn_input(PAUSE_BEFORE_END_PROMPT)
+    config.pause_before_end = choice == "y"
+    if config.pause_before_end:
+        while True:
+            try:
+                seconds_input = input(PAUSE_BEFORE_END_SECONDS_PROMPT)
+                if not seconds_input:
+                    config.pause_before_end_seconds = 1.0
+                    break
+                pause_seconds = float(seconds_input)
+                if pause_seconds > 0:
+                    config.pause_before_end_seconds = pause_seconds
+                    break
+                else:
+                    print("Please enter a positive number.")
+            except ValueError:
+                print("Invalid input. Please enter a valid number.")
 
     print("Config finished")
     config.save()

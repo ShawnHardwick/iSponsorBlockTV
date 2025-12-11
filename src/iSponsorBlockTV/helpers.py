@@ -45,6 +45,8 @@ class Config:
         self.auto_play = True
         self.join_name = "iSponsorBlockTV"
         self.use_proxy = False
+        self.pause_before_end = False
+        self.pause_before_end_seconds = 1.0
         self.__load()
 
     def validate(self):

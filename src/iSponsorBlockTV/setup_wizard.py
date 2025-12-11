@@ -923,6 +923,56 @@ class UseProxyManager(Vertical):
         self.config.use_proxy = event.checkbox.value
 
 
+class PauseBeforeEndManager(Vertical):
+    """Manager for pause before end feature, allows enabling/disabling and configuring pause timing."""
+
+    def __init__(self, config, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.config = config
+
+    def compose(self) -> ComposeResult:
+        yield Label("Pause Before End", classes="title")
+        yield Label(
+            "Automatically pause video playback a specified number of seconds before the video ends. This prevents the video from abruptly ending.",
+            classes="subtitle",
+            id="pause-before-end-subtitle",
+        )
+        with Horizontal(id="pause-before-end-container"):
+            yield Checkbox(
+                value=self.config.pause_before_end,
+                id="pause-before-end-switch",
+                label="Enable pause before end",
+            )
+        yield Input(
+            placeholder="Seconds before end to pause (default: 1.0)",
+            id="pause-before-end-seconds-input",
+            value=str(getattr(self.config, "pause_before_end_seconds", 1.0)),
+            validators=[
+                Function(
+                    lambda user_input: self._validate_positive_float(user_input),
+                    "Please enter a valid positive number",
+                )
+            ],
+        )
+
+    def _validate_positive_float(self, value: str) -> bool:
+        try:
+            return float(value) > 0
+        except ValueError:
+            return False
+
+    @on(Checkbox.Changed, "#pause-before-end-switch")
+    def changed_pause_before_end(self, event: Checkbox.Changed):
+        self.config.pause_before_end = event.checkbox.value
+
+    @on(Input.Changed, "#pause-before-end-seconds-input")
+    def changed_pause_before_end_seconds(self, event: Input.Changed):
+        try:
+            self.config.pause_before_end_seconds = float(event.input.value)
+        except ValueError:
+            self.config.pause_before_end_seconds = 1.0
+
+
 class ISponsorBlockTVSetup(App):
     TITLE = "iSponsorBlockTV"
     SUB_TITLE = "Setup Wizard"
@@ -963,6 +1013,9 @@ class ISponsorBlockTVSetup(App):
             yield ApiKeyManager(config=self.config, id="api-key-manager", classes="container")
             yield AutoPlayManager(config=self.config, id="autoplay-manager", classes="container")
             yield UseProxyManager(config=self.config, id="useproxy-manager", classes="container")
+            yield PauseBeforeEndManager(
+                config=self.config, id="pause-before-end-manager", classes="container"
+            )
 
     def on_mount(self) -> None:
         if self.check_for_old_config_entries():

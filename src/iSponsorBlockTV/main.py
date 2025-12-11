@@ -13,12 +13,14 @@ from .debug_helpers import AiohttpTracer
 class DeviceListener:
     def __init__(self, api_helper, config, device, debug: bool, web_session):
         self.task: Optional[asyncio.Task] = None
+        self.end_of_video_task: Optional[asyncio.Task] = None
         self.api_helper = api_helper
         self.offset = device.offset
         self.name = device.name
         self.cancelled = False
         self.logger = logging.getLogger(f"iSponsorBlockTV-{device.screen_id}")
         self.web_session = web_session
+        self.config = config
         self.lounge_controller = ytlounge.YtLoungeApi(
             device.screen_id, config, api_helper, self.logger
         )
@@ -91,6 +93,9 @@ class DeviceListener:
             self.logger.info("Playing video %s with %d segments", state.videoId, len(segments))
             if segments:  # If there are segments
                 await self.time_to_segment(segments, state.currentTime, time_start)
+            # Schedule pause before video ends if enabled
+            if self.config.pause_before_end and hasattr(state, 'duration') and state.duration:
+                await self.schedule_pause_before_end(state.currentTime, state.duration, time_start)
 
     # Finds the next segment to skip to and skips to it
     async def time_to_segment(self, segments, position, time_start):
@@ -124,17 +129,60 @@ class DeviceListener:
             asyncio.create_task(self.api_helper.mark_viewed_segments(uuids)),
         )
 
+    # Schedules a pause before the video ends
+    async def schedule_pause_before_end(self, current_time, duration, time_start):
+        # Cancel existing end-of-video task if any
+        try:
+            if self.end_of_video_task:
+                self.logger.debug("Cancelling existing pause_before_end task")
+                self.end_of_video_task.cancel()
+        except BaseException:
+            pass
+        
+        # Calculate time until we should pause
+        stop_time = duration - self.config.pause_before_end_seconds
+        time_until_stop = (
+            (stop_time - current_time - (time.monotonic() - time_start))
+            / self.lounge_controller.playback_speed
+        )
+        
+        self.logger.debug(
+            f"pause_before_end: current_time={current_time:.2f}s, duration={duration:.2f}s, "
+            f"stop_time={stop_time:.2f}s, time_until_stop={time_until_stop:.2f}s, "
+            f"playback_speed={self.lounge_controller.playback_speed}"
+        )
+        
+        # Only schedule if we haven't passed the stop time yet
+        if time_until_stop > 0:
+            self.logger.debug(f"Scheduling pause_before_end in {time_until_stop:.2f}s")
+            self.end_of_video_task = asyncio.create_task(
+                self.pause_before_end(time_until_stop)
+            )
+        else:
+            self.logger.debug(f"Not scheduling pause_before_end: already passed stop time")
+    
+    # Pauses the video before it ends
+    async def pause_before_end(self, time_to_wait):
+        self.logger.debug(f"pause_before_end: waiting {time_to_wait:.2f}s before pausing")
+        await asyncio.sleep(time_to_wait)
+        self.logger.info("Pausing video before end")
+        await self.lounge_controller.pause()
+        self.logger.debug("pause_before_end: pause command sent")
+
     async def cancel(self):
         self.cancelled = True
         await self.lounge_controller.disconnect()
         if self.task:
             self.task.cancel()
+        if self.end_of_video_task:
+            self.end_of_video_task.cancel()
         if self.lounge_controller.subscribe_task_watchdog:
             self.lounge_controller.subscribe_task_watchdog.cancel()
         if self.lounge_controller.subscribe_task:
             self.lounge_controller.subscribe_task.cancel()
         await asyncio.gather(
             self.task,
+            self.end_of_video_task,
             self.lounge_controller.subscribe_task_watchdog,
             self.lounge_controller.subscribe_task,
             return_exceptions=True,
