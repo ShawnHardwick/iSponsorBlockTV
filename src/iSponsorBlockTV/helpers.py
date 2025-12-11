@@ -194,6 +194,26 @@ def start(ctx):
     """Start the main program"""
     config = Config(ctx.obj["data_dir"])
     config.validate()
+    
+    # Debug: Output entire config on startup if debug is enabled
+    if ctx.obj["debug"]:
+        logger = ctx.obj["logger"]
+        logger.debug("=" * 60)
+        logger.debug("Configuration loaded")
+        logger.debug("=" * 60)
+        
+        # Create a sanitized copy of config for display
+        config_dict = {}
+        for key, value in config.__dict__.items():
+            if key in ["apikey"]:
+                # Mask sensitive data
+                config_dict[key] = "***REDACTED***" if value else None
+            else:
+                config_dict[key] = value
+        
+        logger.debug(json.dumps(config_dict, indent=2, default=str))
+        logger.debug("=" * 60)
+    
     main.main(config, ctx.obj["debug"], ctx.obj["http_tracing"])
 
 

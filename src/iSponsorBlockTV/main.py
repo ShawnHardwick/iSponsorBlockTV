@@ -96,6 +96,10 @@ class DeviceListener:
             # Schedule pause before video ends if enabled
             if self.config.pause_before_end and hasattr(state, 'duration') and state.duration:
                 await self.schedule_pause_before_end(state.currentTime, state.duration, time_start)
+        elif state.state.value == 2:  # Paused
+            self.logger.info("Video paused")
+            # Cancel any scheduled pause before end
+            await self.cancel_pause_before_end()
 
     # Finds the next segment to skip to and skips to it
     async def time_to_segment(self, segments, position, time_start):
@@ -132,12 +136,7 @@ class DeviceListener:
     # Schedules a pause before the video ends
     async def schedule_pause_before_end(self, current_time, duration, time_start):
         # Cancel existing end-of-video task if any
-        try:
-            if self.end_of_video_task:
-                self.logger.debug("Cancelling existing pause_before_end task")
-                self.end_of_video_task.cancel()
-        except BaseException:
-            pass
+        await self.cancel_pause_before_end()
         
         # Calculate time until we should pause
         stop_time = duration - self.config.pause_before_end_seconds
@@ -187,6 +186,16 @@ class DeviceListener:
             self.lounge_controller.subscribe_task,
             return_exceptions=True,
         )
+
+    async def cancel_pause_before_end(self):
+        """Cancel any existing pause_before_end task"""
+        try:
+            if self.end_of_video_task:
+                self.logger.debug("Cancelling pause_before_end task")
+                self.end_of_video_task.cancel()
+                self.end_of_video_task = None
+        except BaseException as e:
+            self.logger.warning(f"Error cancelling pause_before_end task: {e}")
 
     async def initialize_web_session(self):
         await self.lounge_controller.change_web_session(self.web_session)
